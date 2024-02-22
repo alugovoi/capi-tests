@@ -1,0 +1,12 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: KvmMachine
+metadata:
+  labels:
+    app.kubernetes.io/name: kvmmachine
+    app.kubernetes.io/instance: kvmmachine-sample
+    app.kubernetes.io/part-of: cluster-api-provider-kvm
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: cluster-api-provider-kvm
+  name: kvmmachine-sample
+spec:
+  # TODO(user): Add fields here
