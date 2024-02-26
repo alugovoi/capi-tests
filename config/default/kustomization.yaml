@@ -8,6 +8,10 @@ namespace: cluster-api-provider-kvm-system
 # field above.
 namePrefix: cluster-api-provider-kvm-
 
+
+commonLabels:
+  cluster.x-k8s.io/provider: infrastructure-kvm
+
 # Labels to add to all resources and selectors.
 #labels:
 #- includeSelectors: true
