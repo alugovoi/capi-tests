@@ -18,13 +18,24 @@ package controller
 
 import (
 	"context"
+	"strings"
 
+	//    "os"
+	//"strings"
+	"fmt"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrastructurev1alpha1 "sigs.k8s.io/cluster-api-provider-kvm/api/v1alpha1"
+
+	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/loadbalancers"
+	"github.com/gophercloud/utils/openstack/clientconfig"
+	//     "net/http"
+	//    "crypto/tls"
 )
 
 // KvmClusterReconciler reconciles a KvmCluster object
@@ -50,6 +61,45 @@ func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	_ = log.FromContext(ctx)
 
 	// TODO(user): your logic here
+	fmt.Print("KVMCLUSTER RECONCILATION LOOP MESSAGE \n")
+	fmt.Print("Despite the name I will work on openstack cloud \n")
+
+	/*
+	   customTransport := http.DefaultTransport.(*http.Transport).Clone()
+	   customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+
+
+	   http_client := &http.Client{Transport: customTransport}
+	*/
+	opts := new(clientconfig.ClientOpts)
+	opts.Cloud = "telstra-kildalab-k0s-alugovoi"
+	//   opts.HTTPClient = http_client
+
+	provider, err := clientconfig.AuthenticatedClient(opts)
+	if err != nil {
+		panic(err)
+	}
+
+	//fmt.Printf("my ctrl: %s\n", req)
+
+	cluster_name := strings.Split(req.String(), "/")[1]
+	fmt.Printf("my cluster_name: %s\n", cluster_name)
+
+	lbClient, err := openstack.NewLoadBalancerV2(provider, gophercloud.EndpointOpts{})
+	_ = lbClient
+
+	createOpts := loadbalancers.CreateOpts{
+		Name:         "LB_" + cluster_name,
+		VipNetworkID: "0b52d445-d7a8-428e-832e-aa293860d0cb",
+		Provider:     "amphorav2",
+		Tags:         []string{"test", "stage"},
+	}
+
+	lb, err := loadbalancers.Create(lbClient, createOpts).Extract()
+	if err != nil {
+		panic(err)
+	}
+	_ = lb
 
 	return ctrl.Result{}, nil
 }
