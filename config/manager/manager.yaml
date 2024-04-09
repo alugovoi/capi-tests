@@ -98,5 +98,13 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        volumeMounts:
+        - mountPath: /etc/openstack/
+          name: clouds
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: clouds
+        name: clouds
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
