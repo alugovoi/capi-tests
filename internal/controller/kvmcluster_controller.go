@@ -18,17 +18,19 @@ package controller
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	//    "os"
 	//"strings"
 	"fmt"
+
 	"k8s.io/apimachinery/pkg/runtime"
+	infrastructurev1alpha1 "sigs.k8s.io/cluster-api-provider-kvm/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	infrastructurev1alpha1 "sigs.k8s.io/cluster-api-provider-kvm/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
@@ -57,11 +59,13 @@ type KvmClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.4/pkg/reconcile
-func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
 
+//+kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch
+
+func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+
+	log := ctrl.LoggerFrom(ctx)
 	// TODO(user): your logic here
-	fmt.Print("KVMCLUSTER RECONCILATION LOOP MESSAGE \n")
 	fmt.Print("Despite the name I will work on openstack cloud \n")
 
 	/*
@@ -71,6 +75,28 @@ func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	   http_client := &http.Client{Transport: customTransport}
 	*/
+
+	KvmCluster := &infrastructurev1alpha1.KvmCluster{}
+	if err := r.Client.Get(ctx, req.NamespacedName, KvmCluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	/*
+		// Fetch the Cluster.
+		cluster, err := util.GetOwnerCluster(ctx, r.Client, KvmCluster.ObjectMeta)
+		if err != nil {
+			log.Info("there is no OwnerCluster " + err.Error())
+			return ctrl.Result{}, err
+		}
+		if cluster == nil {
+			log.Info("Waiting for Cluster Controller to set OwnerRef on KvmCluster")
+			return ctrl.Result{}, nil
+		}
+	*/
+
 	opts := new(clientconfig.ClientOpts)
 	opts.Cloud = "telstra-kildalab-k0s-alugovoi"
 	//   opts.HTTPClient = http_client
@@ -83,23 +109,54 @@ func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	//fmt.Printf("my ctrl: %s\n", req)
 
 	cluster_name := strings.Split(req.String(), "/")[1]
-	fmt.Printf("my cluster_name: %s\n", cluster_name)
 
 	lbClient, err := openstack.NewLoadBalancerV2(provider, gophercloud.EndpointOpts{})
 	_ = lbClient
 
-	createOpts := loadbalancers.CreateOpts{
-		Name:         "LB_" + cluster_name,
-		VipNetworkID: "0b52d445-d7a8-428e-832e-aa293860d0cb",
-		Provider:     "amphorav2",
-		Tags:         []string{"test", "stage"},
+	//Lets check if the infrastructure cluster exists. We will use LB_cluster_name format in the lb's name to filter
+	listOpts := loadbalancers.ListOpts{
+		Name: "LB_" + cluster_name,
 	}
 
-	lb, err := loadbalancers.Create(lbClient, createOpts).Extract()
+	allPages, err := loadbalancers.List(lbClient, listOpts).AllPages()
 	if err != nil {
 		panic(err)
 	}
-	_ = lb
+	allLoadbalancers, err := loadbalancers.ExtractLoadBalancers(allPages)
+	if err != nil {
+		panic(err)
+	}
+
+	var lb loadbalancers.LoadBalancer
+
+	if len(allLoadbalancers) != 0 {
+		log.Info("There is existing infra LB for the cluster")
+		log.Info("There is " + strconv.Itoa(len(allLoadbalancers)) + " lbs available")
+		lb = allLoadbalancers[0]
+		log.Info("The LB ID is " + lb.ID)
+	} else {
+		createOpts := loadbalancers.CreateOpts{
+			Name:         "LB_" + cluster_name,
+			VipNetworkID: "0b52d445-d7a8-428e-832e-aa293860d0cb",
+			//VipNetworkID: KvmCluster.Spec.LBOpenstackNetwork,
+			Provider: "amphorav2",
+			Tags:     []string{"test", "stage"},
+		}
+
+		log.Info("There is no infrastructure LB. Creating LB for cluster " + cluster_name)
+		log.Info("LB network from the spec is " + KvmCluster.Spec.LBOpenstackNetwork)
+		created_lb, err := loadbalancers.Create(lbClient, createOpts).Extract()
+		if err != nil {
+			panic(err)
+		}
+		lb = *created_lb
+		log.Info("The LB ID is " + lb.ID)
+	}
+
+	//fmt.Printf("The LB for cluster:  %s\t is  %s\n", cluster_name, lb.Name)
+	log.Info("LB name: " + lb.ID)
+
+	log.Info("KvmCluster name is " + KvmCluster.Name)
 
 	return ctrl.Result{}, nil
 }
