@@ -27,6 +27,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	infrastructurev1alpha1 "sigs.k8s.io/cluster-api-provider-kvm/api/v1alpha1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -84,18 +87,33 @@ func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	/*
-		// Fetch the Cluster.
-		cluster, err := util.GetOwnerCluster(ctx, r.Client, KvmCluster.ObjectMeta)
-		if err != nil {
-			log.Info("there is no OwnerCluster " + err.Error())
-			return ctrl.Result{}, err
+	patchHelper, err := patch.NewHelper(KvmCluster, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Always patch the openStackCluster when exiting this function so we can persist any OpenStackCluster changes.
+	defer func() {
+		log.Info("updating the k8s object")
+		if err := patchHelper.Patch(ctx, KvmCluster); err != nil {
+			log.Info("failed to patch infra kvm cluster")
 		}
-		if cluster == nil {
-			log.Info("Waiting for Cluster Controller to set OwnerRef on KvmCluster")
-			return ctrl.Result{}, nil
-		}
-	*/
+	}()
+
+	//log.Info("my kvmcluster object is " + r.Scheme.AllKnownTypes()."cluster.x-k8s.io")
+
+	// Fetch the Cluster.
+	cluster, err := util.GetOwnerCluster(ctx, r.Client, KvmCluster.ObjectMeta)
+	log.Info("The cluster object is " + cluster.Status.Phase)
+	if err != nil {
+		log.Info("there is no OwnerCluster " + err.Error())
+		log.Info("The cluster object is " + cluster.Status.Phase)
+		return ctrl.Result{}, err
+	}
+	if cluster == nil {
+		log.Info("Waiting for Cluster Controller to set OwnerRef on KvmCluster")
+		return ctrl.Result{}, nil
+	}
 
 	opts := new(clientconfig.ClientOpts)
 	opts.Cloud = "telstra-kildalab-k0s-alugovoi"
@@ -154,9 +172,17 @@ func (r *KvmClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	//fmt.Printf("The LB for cluster:  %s\t is  %s\n", cluster_name, lb.Name)
-	log.Info("LB name: " + lb.ID)
+	log.Info("LB vip is: " + lb.VipAddress)
 
-	log.Info("KvmCluster name is " + KvmCluster.Name)
+	//log.Info("KvmCluster name is " + KvmCluster.Name)
+
+	KvmCluster.Spec.ControlPlaneEndpoint = &clusterv1.APIEndpoint{
+		Host: lb.VipAddress,
+		Port: 6443,
+	}
+	//KvmCluster.Spec.ControlPlaneEndpoint = ControlPlaneEndpoint
+
+	log.Info("Reconcile loop is finished")
 
 	return ctrl.Result{}, nil
 }
